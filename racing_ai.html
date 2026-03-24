@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>Wyścigówka AI</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+        #game-container {
+            display: flex;
+            gap: 20px;
+            align-items: start;
+        }
+        #gameCanvas {
+            border: 2px solid #333;
+            background-color: #fff;
+        }
+        #webcam-container {
+            position: relative;
+        }
+        #webcam-container canvas {
+            border: 2px solid #333;
+        }
+        #score {
+            font-size: 24px;
+            margin: 10px;
+        }
+        #controls {
+            margin: 10px;
+            font-size: 18px;
+            color: #666;
+        }
+        #gameOver {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 18px;
+            margin-top: 10px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #label-container {
+            margin-top: 10px;
+        }
+        #ai-container {
+            background-color: #f9f9f9;
+            padding: 20px;
+            border-radius: 10px;
+            border: 2px solid #4CAF50;
+        }
+        #modelUrlInput {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 2px solid #4CAF50;
+            border-radius: 5px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        #modelUrlInput:focus {
+            outline: none;
+            border-color: #45a049;
+        }
+        .input-label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+            font-weight: bold;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div id="score">Metry: 0</div>
+    <div id="game-container">
+        <canvas id="gameCanvas" width="400" height="600"></canvas>
+        <div id="ai-container">
+            <label class="input-label">URL modelu z Teachable Machine:</label>
+            <input 
+                type="text" 
+                id="modelUrlInput" 
+                placeholder="https://teachablemachine.withgoogle.com/models/xxxxxx/"
+            >
+            <button type="button" onclick="initGame()">Start gry z AI</button>
+            <div id="webcam-container"></div>
+            <div id="label-container"></div>
+        </div>
+    </div>
+    <div id="controls">Sterowanie: AI przez kamerę lub strzałki ← →</div>
+    <div id="gameOver">
+        <h2>Koniec gry!</h2>
+        <p id="finalScore"></p>
+        <button onclick="restartGame()">Zagraj ponownie</button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDiv = document.getElementById('score');
+        const gameOverDiv = document.getElementById('gameOver');
+        const finalScoreP = document.getElementById('finalScore');
+
+        // Konfiguracja AI
+        let model, webcam, labelContainer, maxPredictions;
+
+        let car = {
+            x: canvas.width / 2 - 20,
+            y: canvas.height - 100,
+            width: 40,
+            height: 60,
+            speed: 3,
+            direction: 0
+        };
+
+        let gameState = {
+            obstacles: [],
+            score: 0,
+            speed: 2,
+            isActive: true,
+            lastObstacleTime: Date.now(),
+            useAI: false
+        };
+
+        // Inicjalizacja AI i gry
+        async function initGame() {
+            if (gameState.useAI) return;
+
+            // Pobierz URL z inputa
+            const modelUrlInput = document.getElementById('modelUrlInput');
+            let URL = modelUrlInput.value.trim();
+            
+            // Walidacja URL
+            if (!URL) {
+                alert('Wpisz URL modelu z Teachable Machine!');
+                return;
+            }
+            
+            // Dodaj slash na końcu jeśli go brakuje
+            if (!URL.endsWith('/')) {
+                URL += '/';
+            }
+
+            try {
+                const modelURL = URL + "model.json";
+                const metadataURL = URL + "metadata.json";
+
+                // Ładowanie modelu
+                model = await tmImage.load(modelURL, metadataURL);
+                maxPredictions = model.getTotalClasses();
+
+                // Ustawienia kamery
+                const flip = true;
+                webcam = new tmImage.Webcam(200, 200, flip);
+                await webcam.setup();
+                await webcam.play();
+
+                // Dodanie elementów do DOM
+                document.getElementById("webcam-container").appendChild(webcam.canvas);
+                labelContainer = document.getElementById("label-container");
+                for (let i = 0; i < maxPredictions; i++) {
+                    labelContainer.appendChild(document.createElement("div"));
+                }
+
+                gameState.useAI = true;
+                window.requestAnimationFrame(aiLoop);
+            } catch (error) {
+                console.error("Błąd inicjalizacji AI:", error);
+                alert("Błąd ładowania modelu! Sprawdź czy URL jest poprawny.\n\nMożesz sterować strzałkami.");
+            }
+        }
+
+        async function aiLoop() {
+            if (!gameState.useAI) return;
+
+            webcam.update();
+            await predict();
+            window.requestAnimationFrame(aiLoop);
+        }
+
+        async function predict() {
+            const prediction = await model.predict(webcam.canvas);
+
+            // Aktualizacja labelContainer
+            for (let i = 0; i < maxPredictions; i++) {
+                const classPrediction = prediction[i].className + ": " +
+                    prediction[i].probability.toFixed(2);
+                labelContainer.childNodes[i].innerHTML = classPrediction;
+            }
+
+            // Ustawienie kierunku na podstawie nazwy klasy (case-insensitive)
+            let maxProb = 0;
+            let direction = 0;
+
+            prediction.forEach((p) => {
+                if (p.probability > maxProb) {
+                    maxProb = p.probability;
+                    const className = p.className.toLowerCase();
+                    if (className.includes('left') || className.includes('lewo')) {
+                        direction = -1;
+                    } else if (className.includes('right') || className.includes('prawo')) {
+                        direction = 1;
+                    } else if (className.includes('straight') || className.includes('prosto') || className.includes('center') || className.includes('środek')) {
+                        direction = 0;
+                    }
+                }
+            });
+
+            if (maxProb > 0.7) { // Próg pewności
+                car.direction = direction;
+            }
+        }
+
+        // Obsługa klawiatury (jako backup)
+        document.addEventListener('keydown', (e) => {
+            if (!gameState.isActive) return;
+
+            if (e.key === 'ArrowLeft') {
+                car.direction = -1;
+            } else if (e.key === 'ArrowRight') {
+                car.direction = 1;
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowLeft' && car.direction === -1) {
+                car.direction = 0;
+            } else if (e.key === 'ArrowRight' && car.direction === 1) {
+                car.direction = 0;
+            }
+        });
+
+        function createObstacle() {
+            return {
+                x: Math.random() * (canvas.width - 40),
+                y: -50,
+                width: 40,
+                height: 40
+            };
+        }
+
+        function drawCar() {
+            ctx.fillStyle = '#3498db';
+            ctx.fillRect(car.x, car.y, car.width, car.height);
+
+            ctx.fillStyle = '#2c3e50';
+            ctx.fillRect(car.x - 5, car.y + 10, 5, 15);
+            ctx.fillRect(car.x + car.width, car.y + 10, 5, 15);
+            ctx.fillRect(car.x - 5, car.y + car.height - 25, 5, 15);
+            ctx.fillRect(car.x + car.width, car.y + car.height - 25, 5, 15);
+        }
+
+        function drawObstacles() {
+            ctx.fillStyle = '#e74c3c';
+            gameState.obstacles.forEach(obs => {
+                ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+            });
+        }
+
+        function checkCollision(rect1, rect2) {
+            return rect1.x < rect2.x + rect2.width &&
+                   rect1.x + rect1.width > rect2.x &&
+                   rect1.y < rect2.y + rect2.height &&
+                   rect1.y + rect1.height > rect2.y;
+        }
+
+        function updateGame() {
+            if (!gameState.isActive) return;
+
+            // Ruch auta
+            if (car.direction === -1 && car.x > 0) {
+                car.x -= car.speed;
+            }
+            if (car.direction === 1 && car.x < canvas.width - car.width) {
+                car.x += car.speed;
+            }
+
+            // Aktualizacja przeszkód (od tyłu żeby splice nie psuło indeksów)
+            for (let i = gameState.obstacles.length - 1; i >= 0; i--) {
+                const obs = gameState.obstacles[i];
+                obs.y += gameState.speed;
+
+                if (obs.y > canvas.height) {
+                    gameState.obstacles.splice(i, 1);
+                    gameState.score += 10;
+                    scoreDiv.textContent = 'Metry: ' + gameState.score;
+                    continue;
+                }
+
+                if (checkCollision(car, obs)) {
+                    gameOver();
+                    return;
+                }
+            }
+
+            // Dodawanie nowych przeszkód
+            if (Date.now() - gameState.lastObstacleTime > 2000) {
+                gameState.obstacles.push(createObstacle());
+                gameState.lastObstacleTime = Date.now();
+            }
+
+            gameState.speed += 0.0001;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawCar();
+            drawObstacles();
+
+            requestAnimationFrame(updateGame);
+        }
+
+        function gameOver() {
+            gameState.isActive = false;
+            finalScoreP.textContent = `Twój wynik: ${gameState.score} metrów`;
+            gameOverDiv.style.display = 'block';
+
+            // Nie zatrzymujemy kamery - niech działa dalej w tle
+        }
+
+        function restartGame() {
+            car.x = canvas.width / 2 - 20;
+            car.direction = 0;
+            gameState = {
+                obstacles: [],
+                score: 0,
+                speed: 2,
+                isActive: true,
+                lastObstacleTime: Date.now(),
+                useAI: gameState.useAI
+            };
+
+            scoreDiv.textContent = 'Metry: 0';
+            gameOverDiv.style.display = 'none';
+
+            // Kamera już działa w tle, nie trzeba jej restartować
+            // aiLoop cały czas działa, wystarczy ustawić isActive na true
+
+            requestAnimationFrame(updateGame);
+        }
+
+        // Start gry
+        updateGame();
+    </script>
+</body>
+</html>

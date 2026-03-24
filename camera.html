@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📷 SNAP</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Serif+Display&display=swap');
+
+  :root {
+    --bg: #0a0a0a;
+    --surface: #111;
+    --border: #2a2a2a;
+    --accent: #e8ff47;
+    --text: #f0f0f0;
+    --muted: #555;
+    --danger: #ff4757;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    gap: 0;
+  }
+
+  header {
+    width: 100%;
+    max-width: 680px;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  header h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 2.8rem;
+    letter-spacing: -1px;
+    color: var(--accent);
+    line-height: 1;
+  }
+
+  header span {
+    font-size: 0.7rem;
+    color: var(--muted);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+
+  .main-card {
+    width: 100%;
+    max-width: 680px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .viewfinder {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4/3;
+    background: #000;
+    overflow: hidden;
+  }
+
+  video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  canvas#snapshot {
+    display: none;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .corner {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border-color: var(--accent);
+    border-style: solid;
+    opacity: 0.7;
+  }
+  .corner-tl { top: 12px; left: 12px; border-width: 2px 0 0 2px; }
+  .corner-tr { top: 12px; right: 12px; border-width: 2px 2px 0 0; }
+  .corner-bl { bottom: 12px; left: 12px; border-width: 0 0 2px 2px; }
+  .corner-br { bottom: 12px; right: 12px; border-width: 0 2px 2px 0; }
+
+  .status-bar {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.6rem;
+    letter-spacing: 2px;
+    color: var(--accent);
+    text-transform: uppercase;
+    opacity: 0.8;
+  }
+
+  .rec-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    background: var(--danger);
+    border-radius: 50%;
+    margin-right: 5px;
+    animation: blink 1.2s step-start infinite;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  .flash-overlay {
+    position: absolute;
+    inset: 0;
+    background: white;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0s;
+  }
+
+  .flash-overlay.active {
+    opacity: 1;
+    transition: opacity 0.05s ease-in;
+  }
+
+  .controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-top: 1px solid var(--border);
+    gap: 12px;
+  }
+
+  .btn {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    padding: 10px 18px;
+    cursor: pointer;
+    transition: all 0.15s;
+    border-radius: 1px;
+    white-space: nowrap;
+  }
+
+  .btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  .btn-snap {
+    background: var(--accent);
+    color: #000;
+    border-color: var(--accent);
+    font-weight: 700;
+    font-size: 0.8rem;
+    padding: 12px 28px;
+    flex-shrink: 0;
+  }
+
+  .btn-snap:hover {
+    background: #fff;
+    border-color: #fff;
+    color: #000;
+  }
+
+  .btn-snap:active {
+    transform: scale(0.97);
+  }
+
+  .meta {
+    font-size: 0.6rem;
+    color: var(--muted);
+    letter-spacing: 1px;
+  }
+
+  .gallery {
+    width: 100%;
+    max-width: 680px;
+    margin-top: 16px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 6px;
+  }
+
+  .thumb-wrap {
+    position: relative;
+    aspect-ratio: 4/3;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    background: #000;
+    border-radius: 1px;
+  }
+
+  .thumb-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.2s;
+  }
+
+  .thumb-wrap:hover img { transform: scale(1.04); }
+
+  .thumb-dl {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.15s;
+    font-size: 0.6rem;
+    letter-spacing: 2px;
+    color: var(--accent);
+    text-transform: uppercase;
+  }
+
+  .thumb-wrap:hover .thumb-dl { opacity: 1; }
+
+  #start-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+
+  .no-cam-msg {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 0.7rem;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  select {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.65rem;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 6px 10px;
+    cursor: pointer;
+    outline: none;
+  }
+
+  select:focus { border-color: var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>SNAP</h1>
+  <span>webcam studio v1.0</span>
+</header>
+
+<div class="main-card">
+  <div class="viewfinder" id="viewfinder">
+    <video id="video" autoplay playsinline></video>
+    <canvas id="snapshot"></canvas>
+
+    <div class="corner corner-tl"></div>
+    <div class="corner corner-tr"></div>
+    <div class="corner corner-bl"></div>
+    <div class="corner corner-br"></div>
+
+    <div class="status-bar" id="status-bar" style="display:none;">
+      <span class="rec-dot"></span>LIVE
+    </div>
+
+    <div class="flash-overlay" id="flash"></div>
+
+    <div class="no-cam-msg" id="no-cam-msg">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+        <circle cx="12" cy="13" r="4"/>
+      </svg>
+      kliknij "START" żeby włączyć kamerkę
+    </div>
+  </div>
+
+  <div class="controls">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <button class="btn" id="start-btn" onclick="startCamera()">▶ Start</button>
+      <button class="btn" id="flip-btn" onclick="flipCamera()" disabled>⇄ Flip</button>
+      <select id="cam-select" onchange="switchCamera()" style="display:none;"></select>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;">
+      <div class="meta" id="shot-count">0 zdjęć</div>
+      <button class="btn btn-snap" id="snap-btn" onclick="takePhoto()" disabled>📷 SNAP</button>
+    </div>
+  </div>
+</div>
+
+<div class="gallery" id="gallery"></div>
+
+<script>
+let stream = null;
+let facingMode = 'user';
+let shotCount = 0;
+let cameras = [];
+let currentCamIndex = 0;
+
+const video = document.getElementById('video');
+const snapCanvas = document.getElementById('snapshot');
+const flash = document.getElementById('flash');
+const startBtn = document.getElementById('start-btn');
+const snapBtn = document.getElementById('snap-btn');
+const flipBtn = document.getElementById('flip-btn');
+const statusBar = document.getElementById('status-bar');
+const noCamMsg = document.getElementById('no-cam-msg');
+const gallery = document.getElementById('gallery');
+const shotCountEl = document.getElementById('shot-count');
+const camSelect = document.getElementById('cam-select');
+
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1440 } },
+      audio: false
+    });
+    video.srcObject = stream;
+    video.style.display = 'block';
+    noCamMsg.style.display = 'none';
+    statusBar.style.display = 'block';
+    startBtn.textContent = '■ Stop';
+    startBtn.onclick = stopCamera;
+    snapBtn.disabled = false;
+    flipBtn.disabled = false;
+
+    // enumerate cameras
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    cameras = devices.filter(d => d.kind === 'videoinput');
+    if (cameras.length > 1) {
+      camSelect.style.display = 'inline';
+      camSelect.innerHTML = cameras.map((c, i) =>
+        `<option value="${i}">${c.label || 'Kamera ' + (i+1)}</option>`
+      ).join('');
+    }
+  } catch(e) {
+    noCamMsg.innerHTML = `<span>⚠</span>Brak dostępu do kamery<br><small style="font-size:0.55rem;margin-top:4px;">${e.message}</small>`;
+  }
+}
+
+function stopCamera() {
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  video.srcObject = null;
+  statusBar.style.display = 'none';
+  noCamMsg.style.display = 'flex';
+  startBtn.textContent = '▶ Start';
+  startBtn.onclick = startCamera;
+  snapBtn.disabled = true;
+  flipBtn.disabled = true;
+  camSelect.style.display = 'none';
+}
+
+function flipCamera() {
+  facingMode = facingMode === 'user' ? 'environment' : 'user';
+  if (stream) { stopCamera(); startCamera(); }
+}
+
+function switchCamera() {
+  currentCamIndex = parseInt(camSelect.value);
+  const deviceId = cameras[currentCamIndex]?.deviceId;
+  if (!deviceId || !stream) return;
+  stream.getTracks().forEach(t => t.stop());
+  navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: deviceId } }, audio: false })
+    .then(s => { stream = s; video.srcObject = s; });
+}
+
+function takePhoto() {
+  const w = video.videoWidth;
+  const h = video.videoHeight;
+  snapCanvas.width = w;
+  snapCanvas.height = h;
+  const ctx = snapCanvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, w, h);
+
+  // flash effect
+  flash.classList.add('active');
+  setTimeout(() => flash.classList.remove('active'), 150);
+
+  const dataURL = snapCanvas.toDataURL('image/jpeg', 0.95);
+  shotCount++;
+  shotCountEl.textContent = `${shotCount} zdjęć`;
+  addThumb(dataURL, shotCount);
+}
+
+function addThumb(dataURL, n) {
+  const ts = new Date().toLocaleTimeString('pl', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const wrap = document.createElement('div');
+  wrap.className = 'thumb-wrap';
+
+  const img = document.createElement('img');
+  img.src = dataURL;
+
+  const dl = document.createElement('div');
+  dl.className = 'thumb-dl';
+  dl.textContent = '⬇ pobierz';
+
+  wrap.appendChild(img);
+  wrap.appendChild(dl);
+  wrap.addEventListener('click', () => downloadPhoto(dataURL, n));
+  gallery.prepend(wrap);
+}
+
+function downloadPhoto(dataURL, n) {
+  const a = document.createElement('a');
+  a.href = dataURL;
+  a.download = `snap_${n}_${Date.now()}.jpg`;
+  a.click();
+}
+
+// spacja = snap
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' && !snapBtn.disabled) { e.preventDefault(); takePhoto(); }
+});
+</script>
+</body>
+</html>
